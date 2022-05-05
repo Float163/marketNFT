@@ -91,6 +91,7 @@ contract marketNFT {
     // - завершить аукцион и отправить НФТ победителю
     function finishAuction(uint256 _tokenID) public {
         require(_auction[_tokenID].exist, "Not exist");
+        require(_balance[_tokenID] == msg.sender, "Not owner");        
         require((block.timestamp - _auction[_tokenID].startDate) / 60 / 60 /24 > 3 , "Minimum 3 days");
         if (_auction[_tokenID].count > 1) {
             ERC20(tokenAddress).transfer(_balance[_tokenID], _auction[_tokenID].currentPrice);

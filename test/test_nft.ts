@@ -249,7 +249,7 @@ describe("Marketplace contract", function () {
       await mERC20.connect(addr3).approve(market.address, ethers.utils.parseEther('200'));                  
       await market.connect(addr1).listItemOnAuction(0, ethers.utils.parseEther('10'));
       await expect(
-        market.connect(addr2).finishAuction(0)
+        market.connect(addr1).finishAuction(0)
       ).to.be.revertedWith("Minimum 3 days");
     });
 
