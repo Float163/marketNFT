@@ -10,7 +10,9 @@ contract marketNFT {
 
     address public nftAddress;
     address public tokenAddress;    
-    address public owner;    
+    address public owner; 
+
+    uint8 private _type_NFT; //1 - 712ERC, 2 - 1155ERC  
 
     mapping (uint256 => address) private _balance;
     mapping (uint256 => uint256) private _listedItems;
@@ -25,16 +27,37 @@ contract marketNFT {
 
     mapping (uint256 => Auction) private _auction;    
 
-    constructor(address _nftAddres, address _tokenAddress) {
-        nftAddress = _nftAddres;
+    constructor(address _nftAddress, address _tokenAddress) {
+        if (ERC165(_nftAddress).supportsInterface(0x80ac58cd)) {
+            _type_NFT = 1;
+        } else if (ERC165(_nftAddress).supportsInterface(0xd9b67a26)) {
+            _type_NFT = 2;
+        }
+        require(_type_NFT > 0, "Not valid NFT contract");       
+        nftAddress = _nftAddress;
         tokenAddress = _tokenAddress;
         owner = msg.sender;
     }
     
+    function _transferNFT(address _from, address _to, uint256 _tokenID) private {
+        if (_type_NFT == 1) {
+            mERC721(nftAddress).transferFrom(_from, _to, _tokenID);            
+        } else if (_type_NFT == 2) {
+            //учет токенов в 1155
+           // _tokenID = mERC1155(nftAddress).mint(_owner, 0, 1, "");            
+        }
+    }
+
     // - создание нового предмета, обращается к контракту NFT и вызывает функцию mint.
     function createItem(string memory  _tokenURI, address _owner) public returns (uint256) {
-        uint256 _tokenID = mERC721(nftAddress).safeMint(_owner);
-        _balance[_tokenID] = _owner;
+        uint256 _tokenID;
+        if (_type_NFT == 1) {
+            _tokenID = mERC721(nftAddress).safeMint(_owner);
+        } else if (_type_NFT == 2) {
+            //учет токенов в 1155
+           // _tokenID = mERC1155(nftAddress).mint(_owner, 0, 1, "");            
+        }
+        _balance[_tokenID] = _owner;        
         return _tokenID;
     }
 
