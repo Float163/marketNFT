@@ -24,21 +24,28 @@ describe("Marketplace contract", function () {
 
   let Token : ContractFactory;
   let Mp : ContractFactory;
+  let TokenERC20 : ContractFactory;
  
   let market : Contract;
   let mERC721 : Contract;
+  let mERC20: Contract;
   let owner : SignerWithAddress;
   let addr1 : SignerWithAddress;
   let addr2 : SignerWithAddress;
-  let addrs : SignerWithAddress[];
+  let addr3 : SignerWithAddress;
 
   beforeEach(async function () {
-    [owner, addr1, addr2, ...addrs] = await ethers.getSigners();    
+    [owner, addr1, addr2, addr3 ] = await ethers.getSigners();    
     Token = await ethers.getContractFactory("mERC721");
     mERC721 = await Token.deploy("mERC721", "mERC7", "https://gateway.pinata.cloud/ipfs/QmZiCMB1TsjNLoGY26XUkLMjHWs4Mh3R6KGv9uFaWdViPg/");    
+    TokenERC20 = await ethers.getContractFactory("m63");    
+    mERC20 = await TokenERC20.deploy('platinum', 'PL', 18, ethers.utils.parseEther('500'));    
     Mp = await ethers.getContractFactory("marketNFT");
-    market = await Mp.deploy(mERC721.address);    
+    market = await Mp.deploy(mERC721.address, mERC20.address);    
     await mERC721.setMinter(market.address);
+    await mERC20.mint(addr1.address, ethers.utils.parseEther('100'));
+    await mERC20.mint(addr2.address, ethers.utils.parseEther('100'));
+    await mERC20.mint(addr3.address, ethers.utils.parseEther('100'));    
   });
 
   describe("Deployment", function () {
@@ -47,7 +54,7 @@ describe("Marketplace contract", function () {
     });
   });
 
-  describe("Transactions", function () {
+  describe("Transactions - mint item", function () {
     it("Should mint tokens to accounts", async function () {
         await market.createItem("", addr1.address);
         const addr1Balance = await mERC721.balanceOf(addr1.address);
@@ -56,91 +63,198 @@ describe("Marketplace contract", function () {
         expect(addr1URI).to.equal('https://gateway.pinata.cloud/ipfs/QmZiCMB1TsjNLoGY26XUkLMjHWs4Mh3R6KGv9uFaWdViPg/1');
       });
 
-
     it("Should fail if mint sender not minter", async function () {
       await expect(
         mERC721.connect(addr1).safeMint(addr2.address)
       ).to.be.revertedWith("Caller is not a minter");
     });
+  });
 
-      
+  describe("Transactions - list & buy item", function () {
     it("Should list item", async function () {
-      const id_nft = await market.createItem("", addr1.address);
-      console.log(id_nft); 
-      const res = await market.connect(addr1).listItem(0, 1);
-      expect(res).to.equal(true);
+      await market.createItem("", addr1.address);
+      await mERC721.connect(addr1).approve(market.address, 0);
+      await market.connect(addr1).listItem(0, 1);
+      const mBalance = await mERC721.balanceOf(market.address);      
+      expect(mBalance).to.equal(1);      
     });
 
     it("Should fail list item if price is zero", async function () {
-      const id_nft = await market.createItem("", addr1.address);
-//      console.log(id_nft); ??????
+      await market.createItem("", addr1.address);
       await expect(
         market.connect(addr1).listItem(0, 0)
       ).to.be.revertedWith("Price is 0");
     });
 
     it("Should fail list item if sender is not owner", async function () {
-      const id_nft = await market.createItem("", addr1.address);
-//      console.log(id_nft); ??????
+      await market.createItem("", addr1.address);
       await expect(
         market.connect(addr1).listItem(1, 1)
       ).to.be.revertedWith("Not owner");
     });
 
-
-/*
-    it("Should fail if sender doesn’t have id tokens", async function () {
-      await expect(
-        hardhatToken.connect(addr1).transferFrom(addr1.address, addr2.address, 0)
-      ).to.be.revertedWith("ERC721: operator query for nonexistent token");
-    });
-
-    it("Should update balances after transfers", async function () {
-      await hardhatToken.safeMint(addr1.address);              
-      await hardhatToken.connect(addr1).transferFrom(addr1.address, addr2.address, 0);
-      expect(await hardhatToken.balanceOf(addr1.address)).to.equal(0);
-      expect(await hardhatToken.balanceOf(addr2.address)).to.equal(1);
-    });
-
-    it("Should allowance transfer", async function () {
-      await hardhatToken.safeMint(addr1.address);      
-      await hardhatToken.connect(addr1).approve(addr2.address, 0);
-      expect(await hardhatToken.getApproved(0)).to.equal(
-        addr2.address
-      );
-    });
-
-    it("Should transfer token if allowance", async function () {
-      await hardhatToken.safeMint(addr1.address);            
-      await hardhatToken.connect(addr1).approve(addr2.address, 0);
-      await hardhatToken.connect(addr2).transferFrom(addr1.address, addr2.address, 0)
-      const addr1Balance = await hardhatToken.balanceOf(addr1.address);
+    it("Should buy item", async function () {
+      await market.createItem("", addr1.address);
+      await mERC721.connect(addr1).approve(market.address, 0);
+      await mERC20.connect(addr2).approve(addr1.address, ethers.utils.parseEther('10'));      
+      await market.connect(addr1).listItem(0, ethers.utils.parseEther('5'));
+      await market.connect(addr2).buyItem(0);
+      const addr1Balance = await mERC721.balanceOf(addr1.address);
+      const addr2Balance = await mERC721.balanceOf(addr2.address);
+      const addr1BalanceE = await mERC20.balanceOf(addr1.address);
+      const addr2BalanceE = await mERC20.balanceOf(addr2.address);
       expect(addr1Balance).to.equal(0);
-      const addr2Balance = await hardhatToken.balanceOf(addr2.address);
-      expect(addr2Balance).to.equal(1);
+      expect(addr2Balance).to.equal(1);      
+      expect(addr1BalanceE).to.equal(ethers.utils.parseEther('105'));
+      expect(addr2BalanceE).to.equal(ethers.utils.parseEther('95'));      
     });
 
-    it("Should fail if allowance doesn’t have id tokens", async function () {
-      await expect(hardhatToken.connect(addr1).approve(addr2.address, 0)
-      ).to.be.revertedWith("ERC721: owner query for nonexistent token");
+    it("Should fail buy item if not listed", async function () {
+      await expect(
+        market.connect(addr1).buyItem(1)
+      ).to.be.revertedWith("Not listed");
     });
 
-    it("Should set approved for all", async function () {
-      await hardhatToken.safeMint(addr1.address);
-      await hardhatToken.connect(addr1).setApprovalForAll(addr2.address, true);
-      expect(await hardhatToken.isApprovedForAll(addr1.address, addr2.address)).to.be.equal(true);
+    it("Should fail buy item if not enough token", async function () {
+      await market.createItem("", addr1.address);
+      await mERC721.connect(addr1).approve(market.address, 0);
+      await mERC20.connect(addr2).approve(addr1.address, ethers.utils.parseEther('200'));      
+      await market.connect(addr1).listItem(0, ethers.utils.parseEther('200'));
+      await expect(
+        market.connect(addr1).buyItem(0)
+      ).to.be.revertedWith("No enough token");
     });
 
-    it("Should unset approved for all", async function () {
-      await hardhatToken.safeMint(addr1.address);
-      await hardhatToken.connect(addr1).setApprovalForAll(addr2.address, true);
-      expect(await hardhatToken.isApprovedForAll(addr1.address, addr2.address)).to.be.equal(true);
-      await hardhatToken.connect(addr1).setApprovalForAll(addr2.address, false);      
-      expect(await hardhatToken.isApprovedForAll(addr1.address, addr2.address)).to.be.equal(false);      
+    it("Should cancel list item", async function () {
+      await market.createItem("", addr1.address);
+      await mERC721.connect(addr1).approve(market.address, 0);
+      await market.connect(addr1).listItem(0, 1);
+      await market.connect(addr1).cancelItem(0);      
+      await expect(
+        market.connect(addr2).buyItem(0)
+      ).to.be.revertedWith("Not listed");
     });
-
-*/
   });
+
+  describe("Transactions - auction", function () {
+
+    it("Should auction item", async function () {
+      await market.createItem("", addr1.address);
+      await mERC721.connect(addr1).approve(market.address, 0);
+      await market.connect(addr1).listItemOnAuction(0, 1);
+      const mBalance = await mERC721.balanceOf(market.address);      
+      expect(mBalance).to.equal(1);      
+    });
+
+    it("Should fail list item at auction if sender is not owner", async function () {
+      await market.createItem("", addr1.address);
+      await expect(
+        market.connect(addr1).listItemOnAuction(1, 1)
+      ).to.be.revertedWith("Not owner");
+    });
+
+    it("Should fail list item at auction if auction already exist", async function () {
+      await market.createItem("", addr1.address);
+      await mERC721.connect(addr1).approve(market.address, 0);
+      await market.connect(addr1).listItemOnAuction(0, 1);
+      await expect(
+        market.connect(addr1).listItemOnAuction(0, 1)
+      ).to.be.revertedWith("Already exist");
+    });
+
+
+    it("Should make bid", async function () {
+      await market.createItem("", addr1.address);
+      await mERC721.connect(addr1).approve(market.address, 0);
+      await mERC20.connect(addr2).approve(market.address, ethers.utils.parseEther('200'));            
+      await market.connect(addr1).listItemOnAuction(0, ethers.utils.parseEther('10'));
+      await market.connect(addr2).makeBid(0, ethers.utils.parseEther('15'));
+      const addr2BalanceE = await mERC20.balanceOf(addr2.address);
+      expect(addr2BalanceE).to.equal(ethers.utils.parseEther('85'));      
+    });
+
+    it("Should make second bid", async function () {
+      await market.createItem("", addr1.address);
+      await mERC721.connect(addr1).approve(market.address, 0);
+      await mERC20.connect(addr2).approve(market.address, ethers.utils.parseEther('200'));            
+      await mERC20.connect(addr3).approve(market.address, ethers.utils.parseEther('200'));                  
+      await market.connect(addr1).listItemOnAuction(0, ethers.utils.parseEther('10'));
+      await market.connect(addr2).makeBid(0, ethers.utils.parseEther('15'));
+      await market.connect(addr3).makeBid(0, ethers.utils.parseEther('20'));      
+      const addr2BalanceE = await mERC20.balanceOf(addr2.address);
+      expect(addr2BalanceE).to.equal(ethers.utils.parseEther('100'));      
+      const addr3BalanceE = await mERC20.balanceOf(addr3.address);
+      expect(addr3BalanceE).to.equal(ethers.utils.parseEther('80'));      
+    });
+
+
+    it("Should fail bid if price less current price", async function () {
+      await market.createItem("", addr1.address);
+      await mERC721.connect(addr1).approve(market.address, 0);
+      await mERC20.connect(addr2).approve(market.address, ethers.utils.parseEther('200'));            
+      await market.connect(addr1).listItemOnAuction(0, ethers.utils.parseEther('10'));
+      await expect(
+        market.connect(addr2).makeBid(0, ethers.utils.parseEther('5'))
+      ).to.be.revertedWith("Price too small");
+    });
+
+
+    it("Should fail bid if not enough token", async function () {
+      await market.createItem("", addr1.address);
+      await mERC721.connect(addr1).approve(market.address, 0);
+      await mERC20.connect(addr2).approve(market.address, ethers.utils.parseEther('200'));            
+      await market.connect(addr1).listItemOnAuction(0, ethers.utils.parseEther('120'));
+      await expect(
+        market.connect(addr2).makeBid(0, ethers.utils.parseEther('130'))
+      ).to.be.revertedWith("No enough token");
+    });
+
+    it("Should finish auction", async function () {
+      await market.createItem("", addr1.address);
+      await mERC721.connect(addr1).approve(market.address, 0);
+      await mERC20.connect(addr2).approve(market.address, ethers.utils.parseEther('200'));            
+      await mERC20.connect(addr3).approve(market.address, ethers.utils.parseEther('200'));                  
+      await market.connect(addr1).listItemOnAuction(0, ethers.utils.parseEther('10'));
+      await market.connect(addr2).makeBid(0, ethers.utils.parseEther('15'));
+      await market.connect(addr3).makeBid(0, ethers.utils.parseEther('20'));   
+      await ethers.provider.send('evm_increaseTime', [60*60*24*5 + 10]);   
+      await market.connect(addr1).finishAuction(0);
+      const addr1BalanceE = await mERC20.balanceOf(addr1.address);
+      expect(addr1BalanceE).to.equal(ethers.utils.parseEther('120'));      
+      const addr3BalanceE = await mERC20.balanceOf(addr3.address);
+      expect(addr3BalanceE).to.equal(ethers.utils.parseEther('80'));   
+      const mBalance = await mERC721.balanceOf(addr3.address);      
+      expect(mBalance).to.equal(1);      
+    });
+
+    it("Should finish auction with less 2 bids", async function () {
+      await market.createItem("", addr1.address);
+      await mERC721.connect(addr1).approve(market.address, 0);
+      await mERC20.connect(addr2).approve(market.address, ethers.utils.parseEther('200'));            
+      await mERC20.connect(addr3).approve(market.address, ethers.utils.parseEther('200'));                  
+      await market.connect(addr1).listItemOnAuction(0, ethers.utils.parseEther('10'));
+      await market.connect(addr2).makeBid(0, ethers.utils.parseEther('15'));
+      await ethers.provider.send('evm_increaseTime', [60*60*24*5 + 10]);   
+      await market.connect(addr1).finishAuction(0);
+      const addr2BalanceE = await mERC20.balanceOf(addr2.address);
+      expect(addr2BalanceE).to.equal(ethers.utils.parseEther('100'));      
+      const mBalance = await mERC721.balanceOf(addr1.address);      
+      expect(mBalance).to.equal(1);      
+    });
+
+    it("Should fail finish auction (less 3 days)", async function () {
+      await market.createItem("", addr1.address);
+      await mERC721.connect(addr1).approve(market.address, 0);
+      await mERC20.connect(addr2).approve(market.address, ethers.utils.parseEther('200'));            
+      await mERC20.connect(addr3).approve(market.address, ethers.utils.parseEther('200'));                  
+      await market.connect(addr1).listItemOnAuction(0, ethers.utils.parseEther('10'));
+      await expect(
+        market.connect(addr2).finishAuction(0)
+      ).to.be.revertedWith("Minimum 3 days");
+    });
+
+  });
+
 
 });
 
