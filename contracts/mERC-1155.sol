@@ -9,7 +9,13 @@ contract mERC1155 is ERC1155, AccessControl {
 
     bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
 
-    constructor(string memory _uri) ERC1155(_uri) {}
+    constructor(string memory _uri) ERC1155(_uri) {
+        _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);        
+    }
+
+    function setMinter (address _minter) public {
+        _setupRole(MINTER_ROLE, _minter);
+    }
 
     function supportsInterface(bytes4 interfaceId) public view virtual override(ERC1155, AccessControl) returns (bool) {
     return

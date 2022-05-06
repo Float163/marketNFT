@@ -3,8 +3,8 @@ pragma solidity ^0.8.4;
 
 import "../contracts/mERC-721.sol";
 import "../contracts/mERC-1155.sol";
-//import "../contracts/m63.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/token/ERC1155/IERC1155Receiver.sol";
 
 contract marketNFT {
 
@@ -13,6 +13,9 @@ contract marketNFT {
     address public owner; 
 
     uint8 private _type_NFT; //1 - 712ERC, 2 - 1155ERC  
+
+    uint256 private _tokenID_1155;
+
 
     mapping (uint256 => address) private _balance;
     mapping (uint256 => uint256) private _listedItems;
@@ -39,12 +42,34 @@ contract marketNFT {
         owner = msg.sender;
     }
     
+    function supportsInterface(bytes4 interfaceId) public pure returns (bool) {
+    return
+        interfaceId == type(IERC1155Receiver).interfaceId;
+    }
+
+       function onERC1155Received(
+        address operator,
+        address from,
+        uint256 id,
+        uint256 value,
+        bytes calldata data
+    ) public returns (bytes4) {return 0xf23a6e61;}
+
+    function onERC1155BatchReceived(
+        address operator,
+        address from,
+        uint256[] calldata ids,
+        uint256[] calldata values,
+        bytes calldata data
+    ) public returns (bytes4) {return 0xbc197c81;}
+
+
     function _transferNFT(address _from, address _to, uint256 _tokenID) private {
         if (_type_NFT == 1) {
             mERC721(nftAddress).transferFrom(_from, _to, _tokenID);            
         } else if (_type_NFT == 2) {
             //учет токенов в 1155
-           // _tokenID = mERC1155(nftAddress).mint(_owner, 0, 1, "");            
+            mERC1155(nftAddress).safeTransferFrom(_from, _to, _tokenID, 1, "");                        
         }
     }
 
@@ -55,7 +80,9 @@ contract marketNFT {
             _tokenID = mERC721(nftAddress).safeMint(_owner);
         } else if (_type_NFT == 2) {
             //учет токенов в 1155
-           // _tokenID = mERC1155(nftAddress).mint(_owner, 0, 1, "");            
+            mERC1155(nftAddress).mint(_owner, _tokenID_1155, 1, "");            
+            _tokenID = _tokenID_1155;
+            _tokenID_1155++;            
         }
         _balance[_tokenID] = _owner;        
         return _tokenID;
@@ -65,7 +92,7 @@ contract marketNFT {
     function listItem(uint256 _tokenID, uint256 _price) public returns (bool) {
         require(_price > 0, "Price is 0");
         require(_balance[_tokenID] == msg.sender, "Not owner");
-        mERC721(nftAddress).transferFrom(msg.sender, address(this), _tokenID);
+        _transferNFT(msg.sender, address(this), _tokenID);
         _listedItems[_tokenID] = _price;
         return true;
     } 
@@ -74,7 +101,7 @@ contract marketNFT {
     function buyItem(uint256 _tokenID) public {
         require(_listedItems[_tokenID] >  0, "Not listed");
         ERC20(tokenAddress).transferFrom(msg.sender, _balance[_tokenID], _listedItems[_tokenID]);
-        mERC721(nftAddress).transferFrom(address(this), msg.sender, _tokenID);
+        _transferNFT(address(this), msg.sender, _tokenID);
         _balance[_tokenID] = msg.sender;
         _listedItems[_tokenID] = 0;
     }
@@ -83,7 +110,7 @@ contract marketNFT {
     function cancelItem(uint256 _tokenID) public {
         require(_listedItems[_tokenID] >  0, "Not listed");
         require(_balance[_tokenID] == msg.sender, "Not owner");
-        mERC721(nftAddress).transferFrom(address(this), msg.sender, _tokenID);        
+        _transferNFT(address(this), msg.sender, _tokenID);        
         _listedItems[_tokenID] = 0;
     }
 
@@ -91,7 +118,7 @@ contract marketNFT {
     function listItemOnAuction(uint256 _tokenID, uint256 _minPrice) public {
         require(_balance[_tokenID] == msg.sender, "Not owner");
         require(!_auction[_tokenID].exist, "Already exist");        
-        mERC721(nftAddress).transferFrom(msg.sender, address(this), _tokenID);        
+        _transferNFT(msg.sender, address(this), _tokenID);        
         Auction storage a = _auction[_tokenID];
         a.startDate = block.timestamp;
         a.currentPrice = _minPrice;
@@ -118,13 +145,13 @@ contract marketNFT {
         require((block.timestamp - _auction[_tokenID].startDate) / 60 / 60 /24 > 3 , "Minimum 3 days");
         if (_auction[_tokenID].count > 1) {
             ERC20(tokenAddress).transfer(_balance[_tokenID], _auction[_tokenID].currentPrice);
-            mERC721(nftAddress).transferFrom(address(this), _auction[_tokenID].currentWinner, _tokenID);
+            _transferNFT(address(this), _auction[_tokenID].currentWinner, _tokenID);
             _balance[_tokenID] =  _auction[_tokenID].currentWinner;
         } else if (_auction[_tokenID].count == 0) {
-            mERC721(nftAddress).transferFrom(address(this), _balance[_tokenID], _tokenID);
+            _transferNFT(address(this), _balance[_tokenID], _tokenID);
         } else {
             ERC20(tokenAddress).transfer(_auction[_tokenID].currentWinner, _auction[_tokenID].currentPrice);            
-            mERC721(nftAddress).transferFrom(address(this), _balance[_tokenID], _tokenID);
+            _transferNFT(address(this), _balance[_tokenID], _tokenID);
         }
         _auction[_tokenID].count = 0;
         _auction[_tokenID].exist = false;
@@ -133,7 +160,8 @@ contract marketNFT {
     // - отменить аукцион
     function cancelAuction(uint256 _tokenID)  public {
         require(_auction[_tokenID].exist, "Not exist");
-        require(_auction[_tokenID].count < 2, "2 or more bids");        
+        require(_auction[_tokenID].count == 0, "Already bid");        
+        _transferNFT(address(this), _balance[_tokenID], _tokenID);        
         _auction[_tokenID].count = 0;
         _auction[_tokenID].exist = false;
     } 
